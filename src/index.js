@@ -1,6 +1,7 @@
 const express = require('express');
 const pool = require('./config/database');
 const userRoutes = require('./api/routes/users');
+const logRoutes = require('./api/routes/logs');
 
 const app = express();
 
@@ -31,6 +32,7 @@ app.get('/api/test-db', async (req, res) => {
 })
 
 app.use('/api/users', userRoutes);
+app.use('/api/logs', logRoutes);
 
 app.listen(PORT, () => {
     console.log(`Server is listening on port ${PORT}`);
