@@ -2,12 +2,14 @@ const express = require('express');
 const pool = require('./config/database');
 const userRoutes = require('./api/routes/users');
 const logRoutes = require('./api/routes/logs');
+const path = require('path');
 
 const app = express();
 
 const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
+app.use('/uploads', express.static(path.join(__dirname, '../public/uploads')));
 
 app.get('/', (req, res) => {
     res.send('Backend is running bitchhh');
