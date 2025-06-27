@@ -39,7 +39,7 @@ router.post('/enroll-face', upload.single('image'), async (req, res) => {
     }
 
     const embeddingId = uuidv4();
-    const embeddingQuery = 'INSERT INTO face_embeddings (entry_id, employee_uuid, embedding, image_url) VALUES (?, ?, ?, ?)';
+    const embeddingQuery = 'INSERT INTO face_embeddings_alt (entry_id, employee_uuid, embedding, image_url) VALUES (?, ?, ?, ?)';
     await connection.query(embeddingQuery, [embeddingId, employeeUuid, embedding, imageUrl]);
 
     res.status(201).json({ message: 'Face enrolled successfully for employee ' + employee_id });
