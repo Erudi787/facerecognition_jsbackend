@@ -27,7 +27,7 @@ router.post('/employees', async (req, res) => {
   const connection = await pool.getConnection();
   try {
     const query = `
-      INSERT INTO employyes
+      INSERT INTO employees
         (id, employee_id, firstname, lastname, position_id, schedule_id, uuid, created_on)
       VALUES (?, ?, ?, ?, ?, ?, ?, CURDATE())
     `;
@@ -170,5 +170,107 @@ router.get('/employee/:employee_id', async (req, res) => {
   }
 });
 
+// --- Endpoint 3: Sync batch attendance data from offline devices ---
+router.post('/attendance/sync', async (req, res) => {
+  const records = req.body; // Expecting an array of attendance records
+
+  if (!Array.isArray(records) || records.length === 0) {
+    return res.status(400).json({ message: 'Request body must be a non-empty array of attendance records.' });
+  }
+
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+
+    for (const record of records) {
+      const { personName, timeIn, timeOut, breakIn, breakOut, overtimeIn, overtimeOut, latitude, longitude, address } = record;
+
+      if (!personName || !timeIn) {
+        console.warn('Skipping record due to missing personName or timeIn:', record);
+        continue;
+      }
+
+      // Find employee_id from personName. This assumes personName is unique.
+      const nameParts = personName.split(' ');
+      const firstname = nameParts[0];
+      const lastname = nameParts.slice(1).join(' ');
+
+      const [emp] = await connection.query('SELECT id FROM employees WHERE firstname = ? AND lastname = ?', [firstname, lastname]);
+
+      if (emp.length === 0) {
+        console.warn(`Skipping record for unknown employee: ${personName}`);
+        continue;
+      }
+      const employeeIdInt = emp[0].id;
+
+      // Use the date from the timeIn record as the schedule date
+      const dateSched = new Date(timeIn).toISOString().slice(0, 10);
+
+      const [attendanceRow] = await connection.query('SELECT id FROM attendance WHERE employee_id = ? AND date_sched = ?', [employeeIdInt, dateSched]);
+
+      // Helper to format DateTime string to TIME format (HH:MM:SS)
+      const formatTime = (dateTimeString) => {
+        if (!dateTimeString) return null;
+        return new Date(dateTimeString).toLocaleTimeString('en-US', { hour12: false });
+      };
+
+      if (attendanceRow.length > 0) {
+        // Record exists, so UPDATE it with all available data from the app
+        const attendanceId = attendanceRow[0].id;
+        const updateQuery = `UPDATE attendance SET
+            time_in = COALESCE(?, time_in),
+            break_out = COALESCE(?, break_out),
+            break_in = COALESCE(?, break_in),
+            time_out = COALESCE(?, time_out),
+            ot_in = COALESCE(?, ot_in),
+            ot_out = COALESCE(?, ot_out),
+            latitude = COALESCE(?, latitude),
+            longitude = COALESCE(?, longitude),
+            address = COALESCE(?, address)
+            WHERE id = ?`;
+        await connection.query(updateQuery, [
+            formatTime(timeIn),
+            formatTime(breakOut),
+            formatTime(breakIn),
+            formatTime(timeOut),
+            formatTime(overtimeIn),
+            formatTime(overtimeOut),
+            latitude,
+            longitude,
+            address,
+            attendanceId
+        ]);
+      } else {
+        // No record for that day, so INSERT a new one
+        const insertQuery = `INSERT INTO attendance
+            (employee_id, date_sched, time_in, break_out, break_in, time_out, ot_in, ot_out, latitude, longitude, address)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+        await connection.query(insertQuery, [
+            employeeIdInt,
+            dateSched,
+            formatTime(timeIn),
+            formatTime(breakOut),
+            formatTime(breakIn),
+            formatTime(timeOut),
+            formatTime(overtimeIn),
+            formatTime(overtimeOut),
+            latitude,
+            longitude,
+            address
+        ]);
+      }
+    }
+
+    await connection.commit();
+    res.status(200).json({ message: 'Sync completed successfully.' });
+
+  } catch (error) {
+    await connection.rollback();
+    console.error('Error syncing attendance:', error);
+    res.status(500).json({ message: 'Server error while syncing attendance.' });
+  } finally {
+    connection.release();
+  }
+});
 
 module.exports = router;
