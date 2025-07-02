@@ -188,5 +188,32 @@ router.delete('/faces/:entryId', async (req, res) => {
   }
 });
 
+router.get('/logs/all', async (req, res) => {
+  try {
+    // This query JOINS the users table with the time_logs table
+    const query = `
+      SELECT 
+        tl.log_id,
+        tl.event_type,
+        tl.event_timestamp,
+        tl.latitude,
+        tl.longitude,
+        tl.address,
+        u.name AS userName  -- We select the 'name' column from the 'users' table
+      FROM time_logs tl
+      JOIN users u ON tl.user_id = u.id -- This is the JOIN condition
+      ORDER BY tl.event_timestamp DESC;
+    `;
+    
+    const [allLogs] = await pool.query(query);
+
+    res.status(200).json(allLogs);
+
+  } catch (error) {
+    console.error('Error fetching all user logs:', error);
+    res.status(500).json({ message: 'Failed to fetch logs.' });
+  }
+});
+
 // Export the router so our main server file can use it
 module.exports = router;
